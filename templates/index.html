@@ -125,7 +125,12 @@
                     {% if result.emails %}
                     <div>
                         <div class="flex items-center justify-between mb-1">
-                            <span class="text-sm font-medium text-gray-500">Emails</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium text-gray-500">Emails</span>
+                                {% if result.deep_search_used %}
+                                <span class="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 rounded-full" title="Found via {{ result.deep_search_page }}">via Contact Page</span>
+                                {% endif %}
+                            </div>
                             <button onclick="copyToClipboard('{{ result.emails | join(', ') }}')" class="copy-btn text-xs text-blue-600 hover:text-blue-800">Copy all</button>
                         </div>
                         <ul class="space-y-1">
