@@ -5,7 +5,7 @@ import re
 import time
 import csv
 import io
-import json
+import phonenumbers
 
 app = Flask(__name__)
 
@@ -58,6 +58,37 @@ def fetch_with_retry(url, max_retries=3):
     return {'error': last_error}
 
 
+def detect_tech_stack(html_content):
+    """Detect the website's tech stack from HTML signatures."""
+    html_lower = html_content.lower()
+
+    # Check for WordPress
+    if 'wp-content' in html_lower or 'wordpress' in html_lower or 'wp-includes' in html_lower:
+        return 'WordPress'
+
+    # Check for Shopify
+    if 'shopify' in html_lower or 'cdn.shopify.com' in html_lower:
+        return 'Shopify'
+
+    # Check for Wix
+    if 'wix.com' in html_lower or 'wixstatic.com' in html_lower:
+        return 'Wix'
+
+    # Check for Squarespace
+    if 'squarespace' in html_lower or 'sqsp.com' in html_lower:
+        return 'Squarespace'
+
+    # Check for Webflow
+    if 'webflow' in html_lower:
+        return 'Webflow'
+
+    # Check for Framer
+    if 'framer' in html_lower:
+        return 'Framer'
+
+    return 'Unknown'
+
+
 def extract_emails(soup, page_text):
     """Extract emails from mailto links and page text with filtering."""
     emails = set()
@@ -91,62 +122,65 @@ def extract_emails(soup, page_text):
     return list(filtered)
 
 
+def normalize_phone(phone_str, default_region='US'):
+    """Normalize a phone number to E164 format for deduplication."""
+    try:
+        parsed = phonenumbers.parse(phone_str, default_region)
+        if phonenumbers.is_valid_number(parsed):
+            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+    except phonenumbers.NumberParseException:
+        pass
+    return None
+
+
 def extract_phones(soup, page_text):
-    """Extract phone numbers from tel links and page text."""
-    phones = set()
+    """Extract and deduplicate phone numbers using phonenumbers library."""
+    raw_phones = set()
 
     # From tel: links
     for tel_link in soup.find_all('a', href=re.compile(r'^tel:', re.I)):
         phone = tel_link['href'].replace('tel:', '').strip()
         if phone:
-            phones.add(phone)
+            raw_phones.add(phone)
 
-    # Improved phone patterns
+    # Phone patterns to find in text
     phone_patterns = [
         r'\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',  # US: (555) 123-4567
         r'\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}',  # International
         r'\d{3}[-.\s]\d{3}[-.\s]\d{4}',  # Simple: 555-123-4567
         r'\(\d{3}\)\s?\d{3}[-.\s]?\d{4}',  # (555) 123-4567
+        r'0\d{4}\s?\d{6}',  # UK: 07305 859070
+        r'\+44\s?\d{4}\s?\d{6}',  # UK with country code
     ]
 
     for pattern in phone_patterns:
         for phone in re.findall(pattern, page_text):
-            cleaned = re.sub(r'[^\d+]', '', phone)
-            if 10 <= len(cleaned) <= 15:
-                phones.add(phone.strip())
+            raw_phones.add(phone.strip())
 
-    return list(phones)
+    # Normalize and deduplicate
+    normalized_map = {}  # E164 -> display format
+    for phone in raw_phones:
+        e164 = normalize_phone(phone)
+        if e164:
+            # Keep the nicest looking format (prefer ones with + prefix)
+            if e164 not in normalized_map or phone.startswith('+'):
+                # Format nicely for display
+                try:
+                    parsed = phonenumbers.parse(phone, 'US')
+                    display = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+                    normalized_map[e164] = display
+                except:
+                    normalized_map[e164] = phone
 
-
-def extract_addresses(soup, page_text):
-    """Extract physical addresses from page text."""
-    addresses = []
-
-    # Look for common address patterns (US-focused)
-    # Pattern: Number + Street + City, State ZIP
-    address_pattern = r'\d{1,5}\s+[\w\s]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Court|Ct|Circle|Cir|Place|Pl)\.?(?:\s*,?\s*(?:Suite|Ste|Unit|Apt|#)\s*[\w-]+)?(?:\s*,?\s*[\w\s]+,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)?'
-
-    matches = re.findall(address_pattern, page_text, re.IGNORECASE)
-    for match in matches[:5]:  # Limit to 5 addresses
-        cleaned = ' '.join(match.split())
-        if len(cleaned) > 10 and cleaned not in addresses:
-            addresses.append(cleaned)
-
-    # Also look in structured data (address tags, schema.org)
-    for addr in soup.find_all(['address']):
-        text = addr.get_text(separator=' ', strip=True)
-        if text and len(text) > 10 and text not in addresses:
-            addresses.append(text[:200])
-
-    return addresses[:5]
+    return list(normalized_map.values())
 
 
 def extract_socials(soup):
-    """Extract social media links."""
+    """Extract social media profile URLs."""
     social_domains = {
         'linkedin.com': 'LinkedIn',
         'twitter.com': 'Twitter',
-        'x.com': 'Twitter',
+        'x.com': 'X',
         'facebook.com': 'Facebook',
         'instagram.com': 'Instagram',
         'youtube.com': 'YouTube',
@@ -161,8 +195,9 @@ def extract_socials(soup):
         href = link['href']
         for domain, platform in social_domains.items():
             if domain in href.lower() and href not in seen_urls:
-                # Skip share/intent links
-                if '/share' in href.lower() or '/intent' in href.lower():
+                # Skip share/intent/sharer links
+                skip_patterns = ['/share', '/intent', '/sharer', 'share?', 'dialog/share']
+                if any(p in href.lower() for p in skip_patterns):
                     continue
                 socials.append({'platform': platform, 'url': href})
                 seen_urls.add(href)
@@ -179,7 +214,11 @@ def scrape_url(url):
         return result
 
     response = result
-    soup = BeautifulSoup(response.text, 'html.parser')
+    html_content = response.text
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Detect tech stack before removing elements
+    tech_stack = detect_tech_stack(html_content)
 
     # Remove script and style elements for cleaner text extraction
     for element in soup(['script', 'style', 'noscript']):
@@ -202,11 +241,11 @@ def scrape_url(url):
         'title': title,
         'h1': h1,
         'meta_description': meta_description,
+        'tech_stack': tech_stack,
         'emails': extract_emails(soup, page_text),
         'phones': extract_phones(soup, page_text),
-        'addresses': extract_addresses(soup, page_text),
         'socials': extract_socials(soup),
-        'final_url': response.url,  # Track redirects
+        'final_url': response.url,
     }
 
 
@@ -238,12 +277,12 @@ def export():
 
     writer.writerow(['Field', 'Value'])
     writer.writerow(['URL', url])
+    writer.writerow(['Tech Stack', result.get('tech_stack', 'Unknown')])
     writer.writerow(['Title', result.get('title', '')])
     writer.writerow(['H1', result.get('h1', '')])
     writer.writerow(['Meta Description', result.get('meta_description', '')])
     writer.writerow(['Emails', ', '.join(result.get('emails', []))])
     writer.writerow(['Phones', ', '.join(result.get('phones', []))])
-    writer.writerow(['Addresses', ' | '.join(result.get('addresses', []))])
     writer.writerow(['Social Links', ', '.join([s['url'] for s in result.get('socials', [])])])
 
     output.seek(0)

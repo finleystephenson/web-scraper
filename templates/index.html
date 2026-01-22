@@ -65,17 +65,31 @@
                 <p class="text-sm">{{ result.error }}</p>
             </div>
             {% else %}
-            <!-- Scanned URL -->
+            <!-- Scanned URL + Tech Stack -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <div class="flex justify-between items-start">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900 mb-2">Scanned URL</h2>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-2">
+                            <h2 class="text-lg font-semibold text-gray-900">Scanned URL</h2>
+                            {% if result.tech_stack and result.tech_stack != 'Unknown' %}
+                            <span class="px-3 py-1 text-sm font-medium rounded-full
+                                {% if result.tech_stack == 'WordPress' %}bg-blue-100 text-blue-800
+                                {% elif result.tech_stack == 'Shopify' %}bg-green-100 text-green-800
+                                {% elif result.tech_stack == 'Wix' %}bg-yellow-100 text-yellow-800
+                                {% elif result.tech_stack == 'Squarespace' %}bg-gray-100 text-gray-800
+                                {% elif result.tech_stack == 'Webflow' %}bg-purple-100 text-purple-800
+                                {% elif result.tech_stack == 'Framer' %}bg-pink-100 text-pink-800
+                                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                {{ result.tech_stack }}
+                            </span>
+                            {% endif %}
+                        </div>
                         <p class="text-blue-600 break-all">{{ url }}</p>
                         {% if result.final_url and result.final_url != url %}
                         <p class="text-sm text-gray-500 mt-1">Redirected to: {{ result.final_url }}</p>
                         {% endif %}
                     </div>
-                    <form action="/export" method="POST" class="flex-shrink-0">
+                    <form action="/export" method="POST" class="flex-shrink-0 ml-4">
                         <input type="hidden" name="url" value="{{ url }}">
                         <button type="submit" class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
                             Export CSV
@@ -106,7 +120,7 @@
             <!-- Contact Information -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Contact Information</h2>
-                {% if result.emails or result.phones or result.addresses or result.socials %}
+                {% if result.emails or result.phones or result.socials %}
                 <div class="space-y-4">
                     {% if result.emails %}
                     <div>
@@ -146,30 +160,17 @@
                         </ul>
                     </div>
                     {% endif %}
-                    {% if result.addresses %}
-                    <div>
-                        <span class="text-sm font-medium text-gray-500">Addresses</span>
-                        <ul class="mt-1 space-y-2">
-                            {% for address in result.addresses %}
-                            <li class="flex items-start justify-between group">
-                                <div class="flex items-start gap-2">
-                                    <span class="text-gray-400 mt-0.5">A</span>
-                                    <span class="text-gray-900">{{ address }}</span>
-                                </div>
-                                <button onclick="copyToClipboard('{{ address }}')" class="copy-btn opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity flex-shrink-0 ml-2">Copy</button>
-                            </li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% endif %}
                     {% if result.socials %}
                     <div>
                         <span class="text-sm font-medium text-gray-500">Social Links</span>
                         <ul class="mt-1 space-y-1">
                             {% for social in result.socials %}
-                            <li class="flex items-center gap-2">
-                                <span class="text-gray-400">S</span>
-                                <a href="{{ social.url }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ social.platform }}</a>
+                            <li class="flex items-center justify-between group">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="text-gray-400 flex-shrink-0">{{ social.platform[0] }}</span>
+                                    <a href="{{ social.url }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline truncate" title="{{ social.url }}">{{ social.url }}</a>
+                                </div>
+                                <button onclick="copyToClipboard('{{ social.url }}')" class="copy-btn opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity flex-shrink-0 ml-2">Copy</button>
                             </li>
                             {% endfor %}
                         </ul>
@@ -191,7 +192,7 @@
 
         <!-- Footer -->
         <div class="text-center mt-8 text-sm text-gray-500">
-            <p>Lead X-Ray - A simple web scraper for learning Fly.io deployment</p>
+            <p>Lead X-Ray - Agency lead gen tool</p>
         </div>
     </div>
 
