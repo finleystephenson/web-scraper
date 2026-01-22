@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lead X-Ray</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .copy-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="max-w-2xl mx-auto py-12 px-4">
@@ -16,10 +34,11 @@
 
         <!-- Form Card -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-            <form action="/scan" method="POST" class="flex gap-4">
+            <form id="scanForm" action="/scan" method="POST" class="flex gap-4">
                 <input
                     type="url"
                     name="url"
+                    id="urlInput"
                     placeholder="https://example.com"
                     required
                     class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -27,9 +46,11 @@
                 >
                 <button
                     type="submit"
-                    class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                    id="scanBtn"
+                    class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
                 >
-                    Scan
+                    <span id="btnText">Scan</span>
+                    <span id="btnSpinner" class="spinner hidden"></span>
                 </button>
             </form>
         </div>
@@ -46,8 +67,21 @@
             {% else %}
             <!-- Scanned URL -->
             <div class="bg-white rounded-lg shadow-md p-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-2">Scanned URL</h2>
-                <p class="text-blue-600 break-all">{{ url }}</p>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900 mb-2">Scanned URL</h2>
+                        <p class="text-blue-600 break-all">{{ url }}</p>
+                        {% if result.final_url and result.final_url != url %}
+                        <p class="text-sm text-gray-500 mt-1">Redirected to: {{ result.final_url }}</p>
+                        {% endif %}
+                    </div>
+                    <form action="/export" method="POST" class="flex-shrink-0">
+                        <input type="hidden" name="url" value="{{ url }}">
+                        <button type="submit" class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                            Export CSV
+                        </button>
+                    </form>
+                </div>
             </div>
 
             <!-- SEO Vitals -->
@@ -72,16 +106,22 @@
             <!-- Contact Information -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Contact Information</h2>
-                {% if result.emails or result.phones or result.socials %}
+                {% if result.emails or result.phones or result.addresses or result.socials %}
                 <div class="space-y-4">
                     {% if result.emails %}
                     <div>
-                        <span class="text-sm font-medium text-gray-500">Emails</span>
-                        <ul class="mt-1 space-y-1">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm font-medium text-gray-500">Emails</span>
+                            <button onclick="copyToClipboard('{{ result.emails | join(', ') }}')" class="copy-btn text-xs text-blue-600 hover:text-blue-800">Copy all</button>
+                        </div>
+                        <ul class="space-y-1">
                             {% for email in result.emails %}
-                            <li class="flex items-center gap-2">
-                                <span class="text-gray-400">@</span>
-                                <a href="mailto:{{ email }}" class="text-blue-600 hover:underline">{{ email }}</a>
+                            <li class="flex items-center justify-between group">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-gray-400">@</span>
+                                    <a href="mailto:{{ email }}" class="text-blue-600 hover:underline">{{ email }}</a>
+                                </div>
+                                <button onclick="copyToClipboard('{{ email }}')" class="copy-btn opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity">Copy</button>
                             </li>
                             {% endfor %}
                         </ul>
@@ -89,12 +129,34 @@
                     {% endif %}
                     {% if result.phones %}
                     <div>
-                        <span class="text-sm font-medium text-gray-500">Phone Numbers</span>
-                        <ul class="mt-1 space-y-1">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm font-medium text-gray-500">Phone Numbers</span>
+                            <button onclick="copyToClipboard('{{ result.phones | join(', ') }}')" class="copy-btn text-xs text-blue-600 hover:text-blue-800">Copy all</button>
+                        </div>
+                        <ul class="space-y-1">
                             {% for phone in result.phones %}
-                            <li class="flex items-center gap-2">
-                                <span class="text-gray-400">📞</span>
-                                <a href="tel:{{ phone }}" class="text-blue-600 hover:underline">{{ phone }}</a>
+                            <li class="flex items-center justify-between group">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-gray-400">T</span>
+                                    <a href="tel:{{ phone }}" class="text-blue-600 hover:underline">{{ phone }}</a>
+                                </div>
+                                <button onclick="copyToClipboard('{{ phone }}')" class="copy-btn opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity">Copy</button>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                    {% if result.addresses %}
+                    <div>
+                        <span class="text-sm font-medium text-gray-500">Addresses</span>
+                        <ul class="mt-1 space-y-2">
+                            {% for address in result.addresses %}
+                            <li class="flex items-start justify-between group">
+                                <div class="flex items-start gap-2">
+                                    <span class="text-gray-400 mt-0.5">A</span>
+                                    <span class="text-gray-900">{{ address }}</span>
+                                </div>
+                                <button onclick="copyToClipboard('{{ address }}')" class="copy-btn opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity flex-shrink-0 ml-2">Copy</button>
                             </li>
                             {% endfor %}
                         </ul>
@@ -106,7 +168,7 @@
                         <ul class="mt-1 space-y-1">
                             {% for social in result.socials %}
                             <li class="flex items-center gap-2">
-                                <span class="text-gray-400">🔗</span>
+                                <span class="text-gray-400">S</span>
                                 <a href="{{ social.url }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ social.platform }}</a>
                             </li>
                             {% endfor %}
@@ -132,5 +194,30 @@
             <p>Lead X-Ray - A simple web scraper for learning Fly.io deployment</p>
         </div>
     </div>
+
+    <script>
+        // Loading state
+        document.getElementById('scanForm').addEventListener('submit', function() {
+            document.getElementById('btnText').textContent = 'Scanning...';
+            document.getElementById('btnSpinner').classList.remove('hidden');
+            document.getElementById('scanBtn').disabled = true;
+            document.getElementById('scanBtn').classList.add('opacity-75');
+        });
+
+        // Copy to clipboard
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                // Show brief feedback
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.classList.add('text-green-600');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('text-green-600');
+                }, 1000);
+            });
+        }
+    </script>
 </body>
 </html>
